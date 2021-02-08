@@ -56,7 +56,7 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]Execution, error)
 			return false
 		}
 
-		for orderList.Len() > 0 {
+		for orderList.Len() > 0 && buyOrder.Quantity > 0 {
 			item, err := orderList.Poll(10 * time.Microsecond)
 			if err != nil {
 				break
@@ -84,19 +84,25 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]Execution, error)
 						break
 					}
 				}
+			} else {
+				buyOrder.Quantity -= sellOrder.Quantity
 
-				return false
+				executions = append(executions, Execution{
+					BuyOrderID:  buyOrder.ID,
+					SellOrderID: sellOrder.ID,
+					Quantity:    sellOrder.Quantity,
+					Price:       currSellPrice,
+					Timestamp:   time.Now().UnixNano(),
+				})
 			}
+		}
 
-			buyOrder.Quantity -= sellOrder.Quantity
+		if orderList.Len() == 0 {
+			// TODO
+		}
 
-			executions = append(executions, Execution{
-				BuyOrderID:  buyOrder.ID,
-				SellOrderID: sellOrder.ID,
-				Quantity:    sellOrder.Quantity,
-				Price:       currSellPrice,
-				Timestamp:   time.Now().UnixNano(),
-			})
+		if buyOrder.Quantity == 0 {
+			return false
 		}
 
 		return true
@@ -139,7 +145,7 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]Execution, erro
 			return false
 		}
 
-		for orderList.Len() > 0 {
+		for orderList.Len() > 0 && sellOrder.Quantity > 0 {
 			item, err := orderList.Poll(10 * time.Microsecond)
 			if err != nil {
 				break
@@ -167,19 +173,25 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]Execution, erro
 						break
 					}
 				}
+			} else {
+				sellOrder.Quantity -= buyOrder.Quantity
 
-				return false
+				executions = append(executions, Execution{
+					BuyOrderID:  buyOrder.ID,
+					SellOrderID: sellOrder.ID,
+					Quantity:    buyOrder.Quantity,
+					Price:       currBuyPrice,
+					Timestamp:   time.Now().UnixNano(),
+				})
 			}
+		}
 
-			sellOrder.Quantity -= buyOrder.Quantity
+		if orderList.Len() == 0 {
+			// TODO
+		}
 
-			executions = append(executions, Execution{
-				BuyOrderID:  buyOrder.ID,
-				SellOrderID: sellOrder.ID,
-				Quantity:    buyOrder.Quantity,
-				Price:       currBuyPrice,
-				Timestamp:   time.Now().UnixNano(),
-			})
+		if sellOrder.Quantity == 0 {
+			return false
 		}
 
 		return true
