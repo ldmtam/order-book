@@ -1,9 +1,11 @@
 package orderbook
 
 import (
+	"math/rand"
 	"testing"
 	"time"
 
+	"github.com/spf13/cast"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -140,4 +142,53 @@ func TestPartialOrder(t *testing.T) {
 			assert.EqualValues(t, expectedExecution.Price, test.executions[idx].Price)
 		}
 	}
+}
+
+func benchmarkProcessOrderRandomInsert(n int, b *testing.B) {
+	engine := NewMatchEngine()
+
+	prices := make([]int, n)
+	for i := range prices {
+		prices[i] = rand.Intn(n) + 1
+	}
+
+	orders := make([]*Order, 0, b.N)
+	for i := 0; i < b.N; i++ {
+		orders = append(orders, &Order{})
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		price := prices[rand.Intn(n)]
+
+		order := orders[i]
+		order.ID = cast.ToString(i)
+		order.Price = price
+		order.Quantity = rand.Int()
+
+		if price < n/2 {
+			order.Side = Buy
+		} else {
+			order.Side = Sell
+		}
+
+		engine.ProcessOrder(order)
+	}
+}
+
+func BenchmarkProcessOrder1kLevels(b *testing.B) {
+	benchmarkProcessOrderRandomInsert(1000, b)
+}
+
+func BenchmarkProcessOrder5kLevels(b *testing.B) {
+	benchmarkProcessOrderRandomInsert(5000, b)
+}
+
+func BenchmarkProcessOrder10kLevels(b *testing.B) {
+	benchmarkProcessOrderRandomInsert(10000, b)
+}
+
+func BenchmarkProcessOrder20kLevels(b *testing.B) {
+	benchmarkProcessOrderRandomInsert(20000, b)
 }
