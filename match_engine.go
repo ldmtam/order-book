@@ -32,7 +32,7 @@ func NewMatchEngine(poolSize int) *MatchEngine {
 	poolConfig.MaxTotal = poolSize
 	poolConfig.MaxIdle = poolSize
 
-	orderListPool := pool.NewObjectPool(ctx, &OrderListObjectFactory{}, poolConfig)
+	orderListPool := pool.NewObjectPool(ctx, &OrderQueueObjectFactory{}, poolConfig)
 
 	for i := 0; i < poolSize; i++ {
 		orderListPool.AddObject(ctx)
