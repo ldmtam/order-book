@@ -52,7 +52,7 @@ func NewMatchEngine(poolSize int) *MatchEngine {
 }
 
 // ProcessOrder processes buy or sell order
-func (engine *MatchEngine) ProcessOrder(order *Order) ([]Execution, error) {
+func (engine *MatchEngine) ProcessOrder(order *Order) ([]*Execution, error) {
 	switch order.Side {
 	case Buy:
 		return engine.processBuyOrder(order)
@@ -63,9 +63,9 @@ func (engine *MatchEngine) ProcessOrder(order *Order) ([]Execution, error) {
 	}
 }
 
-func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]Execution, error) {
+func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error) {
 	// pre-allocate execution list of size 10
-	executions := make([]Execution, 0, 10)
+	executions := make([]*Execution, 0, 10)
 
 	engine.sellPrices.Descend(func(i btree.Item) bool {
 		orderRing := i.(OrderRing)
@@ -86,7 +86,7 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]Execution, error)
 			if sellOrder.Quantity >= buyOrder.Quantity {
 				sellOrder.Quantity -= buyOrder.Quantity
 
-				executions = append(executions, Execution{
+				executions = append(executions, &Execution{
 					BuyOrderID:  buyOrder.ID,
 					SellOrderID: sellOrder.ID,
 					Quantity:    buyOrder.Quantity,
@@ -106,7 +106,7 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]Execution, error)
 			} else {
 				buyOrder.Quantity -= sellOrder.Quantity
 
-				executions = append(executions, Execution{
+				executions = append(executions, &Execution{
 					BuyOrderID:  buyOrder.ID,
 					SellOrderID: sellOrder.ID,
 					Quantity:    sellOrder.Quantity,
@@ -166,9 +166,9 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]Execution, error)
 	return executions, nil
 }
 
-func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]Execution, error) {
+func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, error) {
 	// pre-allocate execution list of size 10
-	executions := make([]Execution, 0, 10)
+	executions := make([]*Execution, 0, 10)
 
 	engine.buyPrices.Descend(func(i btree.Item) bool {
 		orderRing := i.(OrderRing)
@@ -189,7 +189,7 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]Execution, erro
 			if buyOrder.Quantity >= sellOrder.Quantity {
 				buyOrder.Quantity -= sellOrder.Quantity
 
-				executions = append(executions, Execution{
+				executions = append(executions, &Execution{
 					BuyOrderID:  buyOrder.ID,
 					SellOrderID: sellOrder.ID,
 					Quantity:    sellOrder.Quantity,
@@ -209,7 +209,7 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]Execution, erro
 			} else {
 				sellOrder.Quantity -= buyOrder.Quantity
 
-				executions = append(executions, Execution{
+				executions = append(executions, &Execution{
 					BuyOrderID:  buyOrder.ID,
 					SellOrderID: sellOrder.ID,
 					Quantity:    buyOrder.Quantity,
