@@ -44,9 +44,9 @@ func NewMatchEngine(poolSize int) *MatchEngine {
 			be the root of the tree. Because btree requires Less function for comparision, we have to reverse the comparision
 			result as below.
 		*/
-		buyPrices: btree.New(256),
+		buyPrices: btree.New(5096),
 		// Same here for scanning sell tree for buying order.
-		sellPrices:    btree.New(256),
+		sellPrices:    btree.New(5096),
 		orderListPool: orderListPool,
 	}
 }
