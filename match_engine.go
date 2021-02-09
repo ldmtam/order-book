@@ -17,11 +17,11 @@ type MatchEngine struct {
 }
 
 // Less ...
-func (a OrderRing) Less(b btree.Item) bool {
+func (a *OrderRing) Less(b btree.Item) bool {
 	if a.Side == Buy {
-		return !(a.Price >= b.(OrderRing).Price)
+		return !(a.Price >= b.(*OrderRing).Price)
 	}
-	return !(a.Price <= b.(OrderRing).Price)
+	return !(a.Price <= b.(*OrderRing).Price)
 }
 
 // NewMatchEngine returns new match engine
@@ -68,7 +68,7 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 	executions := make([]*Execution, 0, 10)
 
 	engine.sellPrices.Descend(func(i btree.Item) bool {
-		orderRing := i.(OrderRing)
+		orderRing := i.(*OrderRing)
 		currSellPrice, orderList := orderRing.Price, orderRing.Orders
 
 		if buyOrder.Price < currSellPrice {
@@ -135,25 +135,21 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 	})
 
 	if buyOrder.Quantity > 0 {
-		orderRing := OrderRing{
+		orderRing := &OrderRing{
 			Price: buyOrder.Price,
 			Side:  Buy,
 		}
 
 		item := engine.buyPrices.Get(orderRing)
 		if item != nil {
-			orderRing = item.(OrderRing)
+			orderRing = item.(*OrderRing)
 		} else {
 			item, err := engine.orderListPool.BorrowObject(context.Background())
 			if err != nil {
 				panic(err)
 			}
 
-			orderRing = OrderRing{
-				Price:  buyOrder.Price,
-				Orders: item.(*RingBuffer),
-				Side:   Buy,
-			}
+			orderRing.Orders = item.(*RingBuffer)
 
 			engine.buyPrices.ReplaceOrInsert(orderRing)
 		}
@@ -171,7 +167,7 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 	executions := make([]*Execution, 0, 10)
 
 	engine.buyPrices.Descend(func(i btree.Item) bool {
-		orderRing := i.(OrderRing)
+		orderRing := i.(*OrderRing)
 		currBuyPrice, orderList := orderRing.Price, orderRing.Orders
 
 		if sellOrder.Price > currBuyPrice {
@@ -238,25 +234,21 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 	})
 
 	if sellOrder.Quantity > 0 {
-		orderRing := OrderRing{
+		orderRing := &OrderRing{
 			Price: sellOrder.Price,
 			Side:  Sell,
 		}
 
 		item := engine.sellPrices.Get(orderRing)
 		if item != nil {
-			orderRing = item.(OrderRing)
+			orderRing = item.(*OrderRing)
 		} else {
 			item, err := engine.orderListPool.BorrowObject(context.Background())
 			if err != nil {
 				panic(err)
 			}
 
-			orderRing = OrderRing{
-				Price:  sellOrder.Price,
-				Orders: item.(*RingBuffer),
-				Side:   Sell,
-			}
+			orderRing.Orders = item.(*RingBuffer)
 
 			engine.sellPrices.ReplaceOrInsert(orderRing)
 		}
