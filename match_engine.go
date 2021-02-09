@@ -76,10 +76,12 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]Execution, error)
 		}
 
 		for orderList.Len() > 0 && buyOrder.Quantity > 0 {
-			sellOrder, err := orderList.Poll(10 * time.Microsecond)
+			item, err := orderList.Poll(10 * time.Microsecond)
 			if err != nil {
 				break
 			}
+
+			sellOrder := item.(*Order)
 
 			if sellOrder.Quantity >= buyOrder.Quantity {
 				sellOrder.Quantity -= buyOrder.Quantity
@@ -156,7 +158,7 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]Execution, error)
 			engine.buyPrices.ReplaceOrInsert(orderRing)
 		}
 
-		if err := orderRing.Orders.Put(*buyOrder); err != nil {
+		if err := orderRing.Orders.Put(buyOrder); err != nil {
 			return nil, err
 		}
 	}
@@ -177,10 +179,12 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]Execution, erro
 		}
 
 		for orderList.Len() > 0 && sellOrder.Quantity > 0 {
-			buyOrder, err := orderList.Poll(10 * time.Microsecond)
+			item, err := orderList.Poll(10 * time.Microsecond)
 			if err != nil {
 				break
 			}
+
+			buyOrder := item.(*Order)
 
 			if buyOrder.Quantity >= sellOrder.Quantity {
 				buyOrder.Quantity -= sellOrder.Quantity
@@ -257,7 +261,7 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]Execution, erro
 			engine.sellPrices.ReplaceOrInsert(orderRing)
 		}
 
-		if err := orderRing.Orders.Put(*sellOrder); err != nil {
+		if err := orderRing.Orders.Put(sellOrder); err != nil {
 			return nil, err
 		}
 

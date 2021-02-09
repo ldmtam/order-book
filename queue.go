@@ -32,7 +32,7 @@ func roundUp(v uint64) uint64 {
 
 type node struct {
 	position uint64
-	data     Order
+	data     interface{}
 }
 
 type nodes []node
@@ -66,7 +66,7 @@ func (rb *RingBuffer) init(size uint64) {
 // Put adds the provided item to the queue.  If the queue is full, this
 // call will block until an item is added to the queue or Dispose is called
 // on the queue.  An error will be returned if the queue is disposed.
-func (rb *RingBuffer) Put(item Order) error {
+func (rb *RingBuffer) Put(item interface{}) error {
 	_, err := rb.put(item, false)
 	return err
 }
@@ -74,11 +74,11 @@ func (rb *RingBuffer) Put(item Order) error {
 // Offer adds the provided item to the queue if there is space.  If the queue
 // is full, this call will return false.  An error will be returned if the
 // queue is disposed.
-func (rb *RingBuffer) Offer(item Order) (bool, error) {
+func (rb *RingBuffer) Offer(item interface{}) (bool, error) {
 	return rb.put(item, true)
 }
 
-func (rb *RingBuffer) put(item Order, offer bool) (bool, error) {
+func (rb *RingBuffer) put(item interface{}, offer bool) (bool, error) {
 	var n *node
 	pos := atomic.LoadUint64(&rb.queue)
 L:
@@ -125,7 +125,7 @@ func (rb *RingBuffer) Get() (interface{}, error) {
 // to the queue, Dispose is called on the queue, or the timeout is reached. An
 // error will be returned if the queue is disposed or a timeout occurs. A
 // non-positive timeout will block indefinitely.
-func (rb *RingBuffer) Poll(timeout time.Duration) (Order, error) {
+func (rb *RingBuffer) Poll(timeout time.Duration) (interface{}, error) {
 	var (
 		n     *node
 		pos   = atomic.LoadUint64(&rb.dequeue)
