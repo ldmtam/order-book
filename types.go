@@ -2,8 +2,6 @@ package orderbook
 
 import (
 	"fmt"
-
-	"github.com/Workiva/go-datastructures/queue"
 )
 
 // Side represents order side (buy or sell)
@@ -60,15 +58,16 @@ func (o Order) String() string {
 }
 
 const (
-	_OrderLimit = 5000
+	_OrderLimit = 10000
 )
 
 // OrderRing represents the order ring
 type OrderRing struct {
 	Price  int
-	Orders *queue.RingBuffer
+	Side   Side
+	Orders *RingBuffer
 }
 
 func (or OrderRing) String() string {
-	return fmt.Sprintf("Price: %d, Num of order: %d", or.Price, or.Orders.Len())
+	return fmt.Sprintf("Price: %d, Num of order: %d, Side: %v", or.Price, or.Orders.Len(), or.Side)
 }

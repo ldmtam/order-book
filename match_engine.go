@@ -1,34 +1,53 @@
 package orderbook
 
 import (
+	"context"
 	"errors"
 	"time"
 
-	"github.com/Workiva/go-datastructures/queue"
-	"github.com/tidwall/btree"
+	"github.com/google/btree"
+	pool "github.com/jolestar/go-commons-pool"
 )
 
 // MatchEngine represents a match engine for a stock symbol
 type MatchEngine struct {
-	buyPrices  *btree.BTree
-	sellPrices *btree.BTree
+	buyPrices     *btree.BTree
+	sellPrices    *btree.BTree
+	orderListPool *pool.ObjectPool
+}
+
+// Less ...
+func (a OrderRing) Less(b btree.Item) bool {
+	if a.Side == Buy {
+		return !(a.Price >= b.(OrderRing).Price)
+	}
+	return !(a.Price <= b.(OrderRing).Price)
 }
 
 // NewMatchEngine returns new match engine
-func NewMatchEngine() *MatchEngine {
+func NewMatchEngine(poolSize int) *MatchEngine {
+	ctx := context.Background()
+
+	poolConfig := pool.NewDefaultPoolConfig()
+	poolConfig.MaxTotal = poolSize
+	poolConfig.MaxIdle = poolSize
+
+	orderListPool := pool.NewObjectPool(ctx, &OrderListObjectFactory{}, poolConfig)
+
+	for i := 0; i < poolSize; i++ {
+		orderListPool.AddObject(ctx)
+	}
+
 	return &MatchEngine{
 		/*
 			When scanning buy tree for selling order, we want price going from highest to lowest, it means highest price will
 			be the root of the tree. Because btree requires Less function for comparision, we have to reverse the comparision
 			result as below.
 		*/
-		buyPrices: btree.New(func(a, b interface{}) bool {
-			return !(a.(OrderRing).Price > b.(OrderRing).Price)
-		}),
+		buyPrices: btree.New(256),
 		// Same here for scanning sell tree for buying order.
-		sellPrices: btree.New(func(a, b interface{}) bool {
-			return !(a.(OrderRing).Price < b.(OrderRing).Price)
-		}),
+		sellPrices:    btree.New(256),
+		orderListPool: orderListPool,
 	}
 }
 
@@ -48,7 +67,7 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]Execution, error)
 	// pre-allocate execution list of size 10
 	executions := make([]Execution, 0, 10)
 
-	engine.sellPrices.Descend(nil, func(i interface{}) bool {
+	engine.sellPrices.Descend(func(i btree.Item) bool {
 		orderRing := i.(OrderRing)
 		currSellPrice, orderList := orderRing.Price, orderRing.Orders
 
@@ -57,12 +76,10 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]Execution, error)
 		}
 
 		for orderList.Len() > 0 && buyOrder.Quantity > 0 {
-			item, err := orderList.Poll(10 * time.Microsecond)
+			sellOrder, err := orderList.Poll(10 * time.Microsecond)
 			if err != nil {
 				break
 			}
-
-			sellOrder := item.(Order)
 
 			if sellOrder.Quantity >= buyOrder.Quantity {
 				sellOrder.Quantity -= buyOrder.Quantity
@@ -99,9 +116,16 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]Execution, error)
 
 		if orderList.Len() == 0 {
 			// TODO
+			if err := engine.orderListPool.ReturnObject(context.Background(), orderList); err != nil {
+				panic(err)
+			}
+
+			if deleted := engine.sellPrices.Delete(i); deleted == nil {
+				panic("item doesn't exist")
+			}
 		}
 
-		if buyOrder.Quantity == 0 {
+		if buyOrder.Quantity == 0 || engine.sellPrices.Len() == 0 {
 			return false
 		}
 
@@ -111,18 +135,25 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]Execution, error)
 	if buyOrder.Quantity > 0 {
 		orderRing := OrderRing{
 			Price: buyOrder.Price,
+			Side:  Buy,
 		}
 
 		item := engine.buyPrices.Get(orderRing)
 		if item != nil {
 			orderRing = item.(OrderRing)
 		} else {
-			orderRing = OrderRing{
-				Price:  buyOrder.Price,
-				Orders: queue.NewRingBuffer(_OrderLimit),
+			item, err := engine.orderListPool.BorrowObject(context.Background())
+			if err != nil {
+				panic(err)
 			}
 
-			engine.buyPrices.Set(orderRing)
+			orderRing = OrderRing{
+				Price:  buyOrder.Price,
+				Orders: item.(*RingBuffer),
+				Side:   Buy,
+			}
+
+			engine.buyPrices.ReplaceOrInsert(orderRing)
 		}
 
 		if err := orderRing.Orders.Put(*buyOrder); err != nil {
@@ -137,7 +168,7 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]Execution, erro
 	// pre-allocate execution list of size 10
 	executions := make([]Execution, 0, 10)
 
-	engine.buyPrices.Descend(nil, func(i interface{}) bool {
+	engine.buyPrices.Descend(func(i btree.Item) bool {
 		orderRing := i.(OrderRing)
 		currBuyPrice, orderList := orderRing.Price, orderRing.Orders
 
@@ -146,12 +177,10 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]Execution, erro
 		}
 
 		for orderList.Len() > 0 && sellOrder.Quantity > 0 {
-			item, err := orderList.Poll(10 * time.Microsecond)
+			buyOrder, err := orderList.Poll(10 * time.Microsecond)
 			if err != nil {
 				break
 			}
-
-			buyOrder := item.(Order)
 
 			if buyOrder.Quantity >= sellOrder.Quantity {
 				buyOrder.Quantity -= sellOrder.Quantity
@@ -188,9 +217,16 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]Execution, erro
 
 		if orderList.Len() == 0 {
 			// TODO
+			if err := engine.orderListPool.ReturnObject(context.Background(), orderList); err != nil {
+				panic(err)
+			}
+
+			if deleted := engine.buyPrices.Delete(i); deleted == nil {
+				panic("item doesn't exist")
+			}
 		}
 
-		if sellOrder.Quantity == 0 {
+		if sellOrder.Quantity == 0 || engine.buyPrices.Len() == 0 {
 			return false
 		}
 
@@ -200,23 +236,31 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]Execution, erro
 	if sellOrder.Quantity > 0 {
 		orderRing := OrderRing{
 			Price: sellOrder.Price,
+			Side:  Sell,
 		}
 
 		item := engine.sellPrices.Get(orderRing)
 		if item != nil {
 			orderRing = item.(OrderRing)
 		} else {
-			orderRing = OrderRing{
-				Price:  sellOrder.Price,
-				Orders: queue.NewRingBuffer(_OrderLimit),
+			item, err := engine.orderListPool.BorrowObject(context.Background())
+			if err != nil {
+				panic(err)
 			}
 
-			engine.sellPrices.Set(orderRing)
+			orderRing = OrderRing{
+				Price:  sellOrder.Price,
+				Orders: item.(*RingBuffer),
+				Side:   Sell,
+			}
+
+			engine.sellPrices.ReplaceOrInsert(orderRing)
 		}
 
 		if err := orderRing.Orders.Put(*sellOrder); err != nil {
 			return nil, err
 		}
+
 	}
 
 	return executions, nil
