@@ -14,6 +14,7 @@ type MatchEngine struct {
 	buyPrices     *btree.BTree
 	sellPrices    *btree.BTree
 	orderListPool *pool.ObjectPool
+	orderIndex    map[string]*Order
 }
 
 // Less ...
@@ -48,7 +49,21 @@ func NewMatchEngine(poolSize int) *MatchEngine {
 		// Same here for scanning sell tree for buying order.
 		sellPrices:    btree.New(5096),
 		orderListPool: orderListPool,
+		orderIndex:    make(map[string]*Order, 100000),
 	}
+}
+
+// CancelOrder cancels order
+func (engine *MatchEngine) CancelOrder(orderID string) error {
+	order, ok := engine.orderIndex[orderID]
+	if !ok {
+		return errors.New("order not found")
+	}
+
+	order.Quantity = 0
+	delete(engine.orderIndex, orderID)
+
+	return nil
 }
 
 // ProcessOrder processes buy or sell order
@@ -82,6 +97,10 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 			}
 
 			sellOrder := item.(*Order)
+
+			if sellOrder.Quantity == 0 {
+				continue
+			}
 
 			if sellOrder.Quantity >= buyOrder.Quantity {
 				sellOrder.Quantity -= buyOrder.Quantity
@@ -157,6 +176,8 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 		if err := orderRing.Orders.Put(buyOrder); err != nil {
 			return nil, err
 		}
+
+		engine.orderIndex[buyOrder.ID] = buyOrder
 	}
 
 	return executions, nil
@@ -181,6 +202,10 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 			}
 
 			buyOrder := item.(*Order)
+
+			if buyOrder.Quantity == 0 {
+				continue
+			}
 
 			if buyOrder.Quantity >= sellOrder.Quantity {
 				buyOrder.Quantity -= sellOrder.Quantity
@@ -257,6 +282,7 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 			return nil, err
 		}
 
+		engine.orderIndex[sellOrder.ID] = sellOrder
 	}
 
 	return executions, nil

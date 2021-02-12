@@ -46,16 +46,16 @@ func TestFilledOrder(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		expectedExecutions, err := engine.ProcessOrder(test.order)
+		execs, err := engine.ProcessOrder(test.order)
 		assert.Nil(t, err)
 
-		t.Log(expectedExecutions)
+		t.Log(execs)
 
-		for idx, expectedExecution := range expectedExecutions {
-			assert.EqualValues(t, expectedExecution.BuyOrderID, test.executions[idx].BuyOrderID)
-			assert.EqualValues(t, expectedExecution.SellOrderID, test.executions[idx].SellOrderID)
-			assert.EqualValues(t, expectedExecution.Quantity, test.executions[idx].Quantity)
-			assert.EqualValues(t, expectedExecution.Price, test.executions[idx].Price)
+		for idx, exec := range execs {
+			assert.EqualValues(t, test.executions[idx].BuyOrderID, exec.BuyOrderID)
+			assert.EqualValues(t, test.executions[idx].SellOrderID, exec.SellOrderID)
+			assert.EqualValues(t, test.executions[idx].Quantity, exec.Quantity)
+			assert.EqualValues(t, test.executions[idx].Price, exec.Price)
 		}
 	}
 }
@@ -130,18 +130,49 @@ func TestPartialOrder(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		expectedExecutions, err := engine.ProcessOrder(test.order)
+		execs, err := engine.ProcessOrder(test.order)
 		assert.Nil(t, err)
 
-		t.Log(expectedExecutions)
+		t.Log(execs)
 
-		for idx, expectedExecution := range expectedExecutions {
-			assert.EqualValues(t, expectedExecution.BuyOrderID, test.executions[idx].BuyOrderID)
-			assert.EqualValues(t, expectedExecution.SellOrderID, test.executions[idx].SellOrderID)
-			assert.EqualValues(t, expectedExecution.Quantity, test.executions[idx].Quantity)
-			assert.EqualValues(t, expectedExecution.Price, test.executions[idx].Price)
+		for idx, exec := range execs {
+			assert.EqualValues(t, test.executions[idx].BuyOrderID, exec.BuyOrderID)
+			assert.EqualValues(t, test.executions[idx].SellOrderID, exec.SellOrderID)
+			assert.EqualValues(t, test.executions[idx].Quantity, exec.Quantity)
+			assert.EqualValues(t, test.executions[idx].Price, exec.Price)
 		}
 	}
+}
+
+func TestCancelOrder(t *testing.T) {
+	engine := NewMatchEngine(512)
+
+	order1 := &Order{
+		ID:        "001",
+		Quantity:  10,
+		Price:     5,
+		Side:      Buy,
+		Timestamp: time.Now().UnixNano(),
+	}
+
+	order2 := &Order{
+		ID:        "002",
+		Quantity:  10,
+		Price:     3,
+		Side:      Sell,
+		Timestamp: time.Now().UnixNano(),
+	}
+
+	execs, err := engine.ProcessOrder(order1)
+	assert.Nil(t, err)
+	assert.Len(t, execs, 0)
+
+	err = engine.CancelOrder("001")
+	assert.Nil(t, err)
+
+	execs, err = engine.ProcessOrder(order2)
+	assert.Nil(t, err)
+	assert.Len(t, execs, 0)
 }
 
 func benchmarkProcessOrderRandomInsert(n int, b *testing.B) {
