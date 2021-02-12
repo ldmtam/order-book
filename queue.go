@@ -137,7 +137,7 @@ func (rb *RingBuffer) Poll(timeout time.Duration) (interface{}, error) {
 L:
 	for {
 		if atomic.LoadUint64(&rb.disposed) == 1 {
-			return Order{}, ErrDisposed
+			return nil, ErrDisposed
 		}
 
 		n = &rb.nodes[pos&rb.mask]
@@ -154,13 +154,13 @@ L:
 		}
 
 		if timeout > 0 && time.Since(start) >= timeout {
-			return Order{}, ErrTimeout
+			return nil, ErrTimeout
 		}
 
 		runtime.Gosched() // free up the cpu before the next iteration
 	}
 	data := n.data
-	n.data = Order{}
+	n.data = nil
 	atomic.StoreUint64(&n.position, pos+rb.mask+1)
 	return data, nil
 }
