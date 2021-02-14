@@ -92,6 +92,7 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 			sellOrder := item.(*Order)
 
 			if _, ok := engine.cancelledOrders[sellOrder.ID]; ok {
+				delete(engine.cancelledOrders, sellOrder.ID)
 				continue
 			}
 
@@ -195,6 +196,7 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 			buyOrder := item.(*Order)
 
 			if _, ok := engine.cancelledOrders[buyOrder.ID]; ok {
+				delete(engine.cancelledOrders, buyOrder.ID)
 				continue
 			}
 
