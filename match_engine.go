@@ -13,7 +13,7 @@ import (
 type MatchEngine struct {
 	buyPrices       *btree.BTree
 	sellPrices      *btree.BTree
-	orderListPool   *pool.ObjectPool
+	orderQueuePool  *pool.ObjectPool
 	cancelledOrders map[string]struct{}
 }
 
@@ -33,10 +33,10 @@ func NewMatchEngine(poolSize int) *MatchEngine {
 	poolConfig.MaxTotal = poolSize
 	poolConfig.MaxIdle = poolSize
 
-	orderListPool := pool.NewObjectPool(ctx, &OrderQueueObjectFactory{}, poolConfig)
+	orderQueuePool := pool.NewObjectPool(ctx, &OrderQueueObjectFactory{}, poolConfig)
 
 	for i := 0; i < poolSize; i++ {
-		orderListPool.AddObject(ctx)
+		orderQueuePool.AddObject(ctx)
 	}
 
 	return &MatchEngine{
@@ -48,7 +48,7 @@ func NewMatchEngine(poolSize int) *MatchEngine {
 		buyPrices: btree.New(5096),
 		// Same here for scanning sell tree for buying order.
 		sellPrices:      btree.New(5096),
-		orderListPool:   orderListPool,
+		orderQueuePool:  orderQueuePool,
 		cancelledOrders: make(map[string]struct{}, 1000),
 	}
 }
@@ -130,8 +130,7 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 		}
 
 		if orderList.Len() == 0 {
-			// TODO
-			if err := engine.orderListPool.ReturnObject(context.Background(), orderList); err != nil {
+			if err := engine.orderQueuePool.ReturnObject(context.Background(), orderList); err != nil {
 				panic(err)
 			}
 
@@ -157,7 +156,7 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 		if item != nil {
 			orderRing = item.(*OrderRing)
 		} else {
-			item, err := engine.orderListPool.BorrowObject(context.Background())
+			item, err := engine.orderQueuePool.BorrowObject(context.Background())
 			if err != nil {
 				panic(err)
 			}
@@ -234,8 +233,7 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 		}
 
 		if orderList.Len() == 0 {
-			// TODO
-			if err := engine.orderListPool.ReturnObject(context.Background(), orderList); err != nil {
+			if err := engine.orderQueuePool.ReturnObject(context.Background(), orderList); err != nil {
 				panic(err)
 			}
 
@@ -261,7 +259,7 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 		if item != nil {
 			orderRing = item.(*OrderRing)
 		} else {
-			item, err := engine.orderListPool.BorrowObject(context.Background())
+			item, err := engine.orderQueuePool.BorrowObject(context.Background())
 			if err != nil {
 				panic(err)
 			}
