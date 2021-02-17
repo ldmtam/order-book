@@ -32,21 +32,13 @@ func NewMatchEngine(poolSize int) *MatchEngine {
 	poolConfig := pool.NewDefaultPoolConfig()
 	poolConfig.MaxTotal = poolSize
 	poolConfig.MaxIdle = poolSize
+	poolConfig.MinIdle = poolSize
 
 	orderQueuePool := pool.NewObjectPool(ctx, &OrderQueueObjectFactory{}, poolConfig)
-
-	for i := 0; i < poolSize; i++ {
-		orderQueuePool.AddObject(ctx)
-	}
+	orderQueuePool.PreparePool(ctx)
 
 	return &MatchEngine{
-		/*
-			When scanning buy tree for selling order, we want price going from highest to lowest, it means highest price will
-			be the root of the tree. Because btree requires Less function for comparision, we have to reverse the comparision
-			result as below.
-		*/
-		buyPrices: btree.New(5096),
-		// Same here for scanning sell tree for buying order.
+		buyPrices:       btree.New(5096),
 		sellPrices:      btree.New(5096),
 		orderQueuePool:  orderQueuePool,
 		cancelledOrders: make(map[string]struct{}, 1000),
