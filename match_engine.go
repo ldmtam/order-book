@@ -31,11 +31,11 @@ func NewMatchEngine(poolSize int) *MatchEngine {
 
 	poolConfig := pool.NewDefaultPoolConfig()
 	poolConfig.MaxTotal = poolSize
-	poolConfig.MaxIdle = poolSize
-	poolConfig.MinIdle = poolSize
+	poolConfig.MaxIdle = -1
+	poolConfig.MinIdle = -1
 
 	orderQueuePool := pool.NewObjectPool(ctx, &OrderQueueObjectFactory{}, poolConfig)
-	orderQueuePool.PreparePool(ctx)
+	pool.Prefill(ctx, orderQueuePool, poolSize)
 
 	return &MatchEngine{
 		buyPrices:       btree.New(5096),
