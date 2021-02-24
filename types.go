@@ -57,15 +57,11 @@ func (o Order) String() string {
 		o.Timestamp)
 }
 
-const (
-	_OrderLimit = 10000
-)
-
 // OrderRing represents the order ring
 type OrderRing struct {
 	Price  int
 	Side   Side
-	Orders *RingBuffer
+	Orders *OrderQueue
 }
 
 func (or OrderRing) String() string {

@@ -26,8 +26,8 @@ func (a *OrderRing) Less(b btree.Item) bool {
 }
 
 // NewMatchEngine returns new match engine
-func NewMatchEngine(poolSize int) *MatchEngine {
-	ctx := context.Background()
+func NewMatchEngine(poolSize, orderQueueSize int) *MatchEngine {
+	ctx := context.WithValue(context.Background(), "order_queue_size", uint64(orderQueueSize))
 
 	poolConfig := pool.NewDefaultPoolConfig()
 	poolConfig.MaxTotal = poolSize
@@ -76,12 +76,10 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 		}
 
 		for orderList.Len() > 0 && buyOrder.Quantity > 0 {
-			item, err := orderList.Poll(10 * time.Microsecond)
-			if err != nil {
+			sellOrder := orderList.Get()
+			if sellOrder == nil {
 				break
 			}
-
-			sellOrder := item.(*Order)
 
 			if _, ok := engine.cancelledOrders[sellOrder.ID]; ok {
 				delete(engine.cancelledOrders, sellOrder.ID)
@@ -102,7 +100,7 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 				buyOrder.Quantity = 0
 
 				if sellOrder.Quantity > 0 {
-					if err := orderList.Put(sellOrder); err != nil {
+					if !orderList.Put(sellOrder) {
 						// TODO: don't expect this error could happen,
 						//        should we panic ?
 						break
@@ -153,13 +151,13 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 				panic(err)
 			}
 
-			orderRing.Orders = item.(*RingBuffer)
+			orderRing.Orders = item.(*OrderQueue)
 
 			engine.buyPrices.ReplaceOrInsert(orderRing)
 		}
 
-		if err := orderRing.Orders.Put(buyOrder); err != nil {
-			return nil, err
+		if !orderRing.Orders.Put(buyOrder) {
+			panic("buy order queue is full")
 		}
 	}
 
@@ -179,12 +177,10 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 		}
 
 		for orderList.Len() > 0 && sellOrder.Quantity > 0 {
-			item, err := orderList.Poll(10 * time.Microsecond)
-			if err != nil {
+			buyOrder := orderList.Get()
+			if buyOrder == nil {
 				break
 			}
-
-			buyOrder := item.(*Order)
 
 			if _, ok := engine.cancelledOrders[buyOrder.ID]; ok {
 				delete(engine.cancelledOrders, buyOrder.ID)
@@ -205,7 +201,7 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 				sellOrder.Quantity = 0
 
 				if buyOrder.Quantity > 0 {
-					if err := orderList.Put(buyOrder); err != nil {
+					if !orderList.Put(buyOrder) {
 						// TODO: don't expect this error could happen,
 						//		 should we panic?
 						break
@@ -256,13 +252,13 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 				panic(err)
 			}
 
-			orderRing.Orders = item.(*RingBuffer)
+			orderRing.Orders = item.(*OrderQueue)
 
 			engine.sellPrices.ReplaceOrInsert(orderRing)
 		}
 
-		if err := orderRing.Orders.Put(sellOrder); err != nil {
-			return nil, err
+		if !orderRing.Orders.Put(sellOrder) {
+			panic("sell order queue is full")
 		}
 	}
 

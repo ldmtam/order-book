@@ -10,7 +10,7 @@ import (
 )
 
 func TestFilledOrder(t *testing.T) {
-	engine := NewMatchEngine(512)
+	engine := NewMatchEngine(512, 16384)
 
 	tests := []struct {
 		order      *Order
@@ -61,7 +61,7 @@ func TestFilledOrder(t *testing.T) {
 }
 
 func TestPartialOrder(t *testing.T) {
-	engine := NewMatchEngine(512)
+	engine := NewMatchEngine(512, 16384)
 
 	tests := []struct {
 		order      *Order
@@ -145,7 +145,7 @@ func TestPartialOrder(t *testing.T) {
 }
 
 func TestCancelOrder(t *testing.T) {
-	engine := NewMatchEngine(512)
+	engine := NewMatchEngine(512, 16384)
 
 	order1 := &Order{
 		ID:        "001",
@@ -176,7 +176,7 @@ func TestCancelOrder(t *testing.T) {
 }
 
 func benchmarkProcessOrderRandomInsert(n int, b *testing.B) {
-	engine := NewMatchEngine(n)
+	engine := NewMatchEngine(n, 8192)
 
 	prices := make([]int, n)
 	for i := range prices {

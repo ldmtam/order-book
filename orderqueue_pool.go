@@ -12,7 +12,7 @@ type OrderQueueObjectFactory struct{}
 // MakeObject ...
 func (of *OrderQueueObjectFactory) MakeObject(ctx context.Context) (*pool.PooledObject, error) {
 	return &pool.PooledObject{
-		Object: NewRingBuffer(_OrderLimit),
+		Object: NewOrderQueue(ctx.Value("order_queue_size").(uint64)),
 	}, nil
 }
 
@@ -28,7 +28,7 @@ func (of *OrderQueueObjectFactory) ValidateObject(ctx context.Context, object *p
 
 // ActivateObject ...
 func (of *OrderQueueObjectFactory) ActivateObject(ctx context.Context, object *pool.PooledObject) error {
-	object.Object.(*RingBuffer).Reset()
+	object.Object.(*OrderQueue).Reset()
 	return nil
 }
 
