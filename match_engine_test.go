@@ -13,26 +13,25 @@ func TestFilledOrder(t *testing.T) {
 	engine := NewMatchEngine(512, 16384)
 
 	tests := []struct {
-		order      *Order
+		orders     []*Order
 		executions []Execution
 	}{
 		{
-			&Order{
-				Quantity:  50,
-				Price:     10,
-				Timestamp: time.Now().UnixNano(),
-				Side:      Buy,
-				ID:        "001",
-			},
-			[]Execution{},
-		},
-		{
-			&Order{
-				Quantity:  50,
-				Price:     5,
-				Timestamp: time.Now().UnixNano(),
-				Side:      Sell,
-				ID:        "002",
+			[]*Order{
+				{
+					Quantity:  50,
+					Price:     10,
+					Timestamp: time.Now().UnixNano(),
+					Side:      Buy,
+					ID:        "001",
+				},
+				{
+					Quantity:  50,
+					Price:     5,
+					Timestamp: time.Now().UnixNano(),
+					Side:      Sell,
+					ID:        "002",
+				},
 			},
 			[]Execution{
 				{
@@ -46,17 +45,23 @@ func TestFilledOrder(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		execs, err := engine.ProcessOrder(test.order)
-		assert.Nil(t, err)
+		execs := make([]Execution, 0)
 
-		t.Log(execs)
+		for _, order := range test.orders {
+			err := engine.ProcessOrder(order)
+			assert.Nil(t, err)
 
-		for idx, exec := range execs {
-			assert.EqualValues(t, test.executions[idx].BuyOrderID, exec.BuyOrderID)
-			assert.EqualValues(t, test.executions[idx].SellOrderID, exec.SellOrderID)
-			assert.EqualValues(t, test.executions[idx].Quantity, exec.Quantity)
-			assert.EqualValues(t, test.executions[idx].Price, exec.Price)
+		L:
+			for {
+				select {
+				case exec := <-engine.Execution():
+					execs = append(execs, exec)
+				case <-time.After(10 * time.Millisecond):
+					break L
+				}
+			}
 		}
+
 	}
 }
 
@@ -64,26 +69,39 @@ func TestPartialOrder(t *testing.T) {
 	engine := NewMatchEngine(512, 16384)
 
 	tests := []struct {
-		order      *Order
+		orders     []*Order
 		executions []Execution
 	}{
 		{
-			&Order{
-				Quantity:  25,
-				Price:     10,
-				Timestamp: time.Now().UnixNano(),
-				Side:      Buy,
-				ID:        "001",
-			},
-			[]Execution{},
-		},
-		{
-			&Order{
-				Quantity:  50,
-				Price:     5,
-				Timestamp: time.Now().UnixNano(),
-				Side:      Sell,
-				ID:        "002",
+			[]*Order{
+				{
+					Quantity:  25,
+					Price:     10,
+					Timestamp: time.Now().UnixNano(),
+					Side:      Buy,
+					ID:        "001",
+				},
+				{
+					Quantity:  50,
+					Price:     5,
+					Timestamp: time.Now().UnixNano(),
+					Side:      Sell,
+					ID:        "002",
+				},
+				{
+					Quantity:  5,
+					Price:     3,
+					Timestamp: time.Now().UnixNano(),
+					Side:      Sell,
+					ID:        "003",
+				},
+				{
+					Quantity:  10,
+					Price:     5,
+					Timestamp: time.Now().UnixNano(),
+					Side:      Buy,
+					ID:        "004",
+				},
 			},
 			[]Execution{
 				{
@@ -92,27 +110,6 @@ func TestPartialOrder(t *testing.T) {
 					Quantity:    25,
 					Price:       10,
 				},
-			},
-		},
-		{
-			&Order{
-				Quantity:  5,
-				Price:     3,
-				Timestamp: time.Now().UnixNano(),
-				Side:      Sell,
-				ID:        "003",
-			},
-			[]Execution{},
-		},
-		{
-			&Order{
-				Quantity:  10,
-				Price:     5,
-				Timestamp: time.Now().UnixNano(),
-				Side:      Buy,
-				ID:        "004",
-			},
-			[]Execution{
 				{
 					BuyOrderID:  "004",
 					SellOrderID: "003",
@@ -130,17 +127,24 @@ func TestPartialOrder(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		execs, err := engine.ProcessOrder(test.order)
-		assert.Nil(t, err)
+		execs := make([]Execution, 0)
 
-		t.Log(execs)
+		for _, order := range test.orders {
+			err := engine.ProcessOrder(order)
+			assert.Nil(t, err)
 
-		for idx, exec := range execs {
-			assert.EqualValues(t, test.executions[idx].BuyOrderID, exec.BuyOrderID)
-			assert.EqualValues(t, test.executions[idx].SellOrderID, exec.SellOrderID)
-			assert.EqualValues(t, test.executions[idx].Quantity, exec.Quantity)
-			assert.EqualValues(t, test.executions[idx].Price, exec.Price)
+		L:
+			for {
+				select {
+				case exec := <-engine.Execution():
+					execs = append(execs, exec)
+				case <-time.After(10 * time.Millisecond):
+					break L
+				}
+			}
 		}
+
+		assertExecutions(t, test.executions, execs)
 	}
 }
 
@@ -163,16 +167,23 @@ func TestCancelOrder(t *testing.T) {
 		Timestamp: time.Now().UnixNano(),
 	}
 
-	execs, err := engine.ProcessOrder(order1)
+	err := engine.ProcessOrder(order1)
 	assert.Nil(t, err)
-	assert.Len(t, execs, 0)
 
 	err = engine.CancelOrder("001")
 	assert.Nil(t, err)
 
-	execs, err = engine.ProcessOrder(order2)
+	err = engine.ProcessOrder(order2)
 	assert.Nil(t, err)
-	assert.Len(t, execs, 0)
+
+	var executed bool
+	select {
+	case <-engine.Execution():
+		executed = true
+	case <-time.After(10 * time.Millisecond):
+		break
+	}
+	assert.Equal(t, false, executed)
 }
 
 func benchmarkProcessOrderRandomInsert(n int, b *testing.B) {
@@ -222,4 +233,17 @@ func BenchmarkProcessOrder10kLevels(b *testing.B) {
 
 func BenchmarkProcessOrder20kLevels(b *testing.B) {
 	benchmarkProcessOrderRandomInsert(20000, b)
+}
+
+func assertExecutions(t *testing.T, execs1, execs2 []Execution) {
+	t.Helper()
+
+	assert.Equal(t, len(execs1), len(execs2))
+
+	for i := 0; i < len(execs1); i++ {
+		assert.Equal(t, execs1[i].BuyOrderID, execs2[i].BuyOrderID)
+		assert.Equal(t, execs1[i].Price, execs2[i].Price)
+		assert.Equal(t, execs1[i].Quantity, execs2[i].Quantity)
+		assert.Equal(t, execs1[i].SellOrderID, execs2[i].SellOrderID)
+	}
 }

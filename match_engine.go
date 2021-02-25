@@ -13,6 +13,7 @@ type MatchEngine struct {
 	buyPrices       *PriceList
 	sellPrices      *PriceList
 	cancelledOrders map[string]struct{}
+	executionCh     chan Execution
 }
 
 // NewMatchEngine returns new match engine
@@ -31,7 +32,13 @@ func NewMatchEngine(poolSize, orderQueueSize int) *MatchEngine {
 		buyPrices:       NewPriceList(orderQueuePool),
 		sellPrices:      NewPriceList(orderQueuePool),
 		cancelledOrders: make(map[string]struct{}, 1000),
+		executionCh:     make(chan Execution, 1e5),
 	}
+}
+
+// Execution ...
+func (engine *MatchEngine) Execution() <-chan Execution {
+	return engine.executionCh
 }
 
 // CancelOrder cancels order
@@ -41,21 +48,18 @@ func (engine *MatchEngine) CancelOrder(orderID string) error {
 }
 
 // ProcessOrder processes buy or sell order
-func (engine *MatchEngine) ProcessOrder(order *Order) ([]*Execution, error) {
+func (engine *MatchEngine) ProcessOrder(order *Order) error {
 	switch order.Side {
 	case Buy:
 		return engine.processBuyOrder(order)
 	case Sell:
 		return engine.processSellOrder(order)
 	default:
-		return nil, errors.New("Order side is not correct")
+		return errors.New("Order side is not correct")
 	}
 }
 
-func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error) {
-	// pre-allocate execution list of size 10
-	executions := make([]*Execution, 0, 10)
-
+func (engine *MatchEngine) processBuyOrder(buyOrder *Order) error {
 	engine.sellPrices.Ascend(func(item *PriceItem) bool {
 		currSellPrice, orderList := item.Price, item.Orders
 
@@ -77,13 +81,13 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 			if sellOrder.Quantity >= buyOrder.Quantity {
 				sellOrder.Quantity -= buyOrder.Quantity
 
-				executions = append(executions, &Execution{
+				engine.executionCh <- Execution{
 					BuyOrderID:  buyOrder.ID,
 					SellOrderID: sellOrder.ID,
 					Quantity:    buyOrder.Quantity,
 					Price:       currSellPrice,
 					Timestamp:   time.Now().UnixNano(),
-				})
+				}
 
 				buyOrder.Quantity = 0
 
@@ -97,13 +101,13 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 			} else {
 				buyOrder.Quantity -= sellOrder.Quantity
 
-				executions = append(executions, &Execution{
+				engine.executionCh <- Execution{
 					BuyOrderID:  buyOrder.ID,
 					SellOrderID: sellOrder.ID,
 					Quantity:    sellOrder.Quantity,
 					Price:       currSellPrice,
 					Timestamp:   time.Now().UnixNano(),
-				})
+				}
 			}
 		}
 
@@ -125,13 +129,10 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 		}
 	}
 
-	return executions, nil
+	return nil
 }
 
-func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, error) {
-	// pre-allocate execution list of size 10
-	executions := make([]*Execution, 0, 10)
-
+func (engine *MatchEngine) processSellOrder(sellOrder *Order) error {
 	engine.buyPrices.Descend(func(item *PriceItem) bool {
 		currBuyPrice, orderList := item.Price, item.Orders
 
@@ -153,14 +154,6 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 			if buyOrder.Quantity >= sellOrder.Quantity {
 				buyOrder.Quantity -= sellOrder.Quantity
 
-				executions = append(executions, &Execution{
-					BuyOrderID:  buyOrder.ID,
-					SellOrderID: sellOrder.ID,
-					Quantity:    sellOrder.Quantity,
-					Price:       currBuyPrice,
-					Timestamp:   time.Now().UnixNano(),
-				})
-
 				sellOrder.Quantity = 0
 
 				if buyOrder.Quantity > 0 {
@@ -171,13 +164,13 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 			} else {
 				sellOrder.Quantity -= buyOrder.Quantity
 
-				executions = append(executions, &Execution{
+				engine.executionCh <- Execution{
 					BuyOrderID:  buyOrder.ID,
 					SellOrderID: sellOrder.ID,
-					Quantity:    buyOrder.Quantity,
+					Quantity:    sellOrder.Quantity,
 					Price:       currBuyPrice,
 					Timestamp:   time.Now().UnixNano(),
-				})
+				}
 			}
 		}
 
@@ -199,5 +192,5 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 		}
 	}
 
-	return executions, nil
+	return nil
 }
