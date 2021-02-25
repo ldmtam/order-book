@@ -5,24 +5,14 @@ import (
 	"errors"
 	"time"
 
-	"github.com/google/btree"
 	pool "github.com/jolestar/go-commons-pool"
 )
 
 // MatchEngine represents a match engine for a stock symbol
 type MatchEngine struct {
-	buyPrices       *btree.BTree
-	sellPrices      *btree.BTree
-	orderQueuePool  *pool.ObjectPool
+	buyPrices       *PriceList
+	sellPrices      *PriceList
 	cancelledOrders map[string]struct{}
-}
-
-// Less ...
-func (a *OrderRing) Less(b btree.Item) bool {
-	if a.Side == Buy {
-		return !(a.Price >= b.(*OrderRing).Price)
-	}
-	return !(a.Price <= b.(*OrderRing).Price)
 }
 
 // NewMatchEngine returns new match engine
@@ -38,9 +28,8 @@ func NewMatchEngine(poolSize, orderQueueSize int) *MatchEngine {
 	pool.Prefill(ctx, orderQueuePool, poolSize)
 
 	return &MatchEngine{
-		buyPrices:       btree.New(5096),
-		sellPrices:      btree.New(5096),
-		orderQueuePool:  orderQueuePool,
+		buyPrices:       NewPriceList(orderQueuePool),
+		sellPrices:      NewPriceList(orderQueuePool),
 		cancelledOrders: make(map[string]struct{}, 1000),
 	}
 }
@@ -67,9 +56,8 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 	// pre-allocate execution list of size 10
 	executions := make([]*Execution, 0, 10)
 
-	engine.sellPrices.Descend(func(i btree.Item) bool {
-		orderRing := i.(*OrderRing)
-		currSellPrice, orderList := orderRing.Price, orderRing.Orders
+	engine.sellPrices.Ascend(func(item *PriceItem) bool {
+		currSellPrice, orderList := item.Price, item.Orders
 
 		if buyOrder.Price < currSellPrice {
 			return false
@@ -120,16 +108,10 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 		}
 
 		if orderList.Len() == 0 {
-			if err := engine.orderQueuePool.ReturnObject(context.Background(), orderList); err != nil {
-				panic(err)
-			}
-
-			if deleted := engine.sellPrices.Delete(i); deleted == nil {
-				panic("item doesn't exist")
-			}
+			engine.sellPrices.Delete(currSellPrice)
 		}
 
-		if buyOrder.Quantity == 0 || engine.sellPrices.Len() == 0 {
+		if buyOrder.Quantity == 0 {
 			return false
 		}
 
@@ -137,26 +119,8 @@ func (engine *MatchEngine) processBuyOrder(buyOrder *Order) ([]*Execution, error
 	})
 
 	if buyOrder.Quantity > 0 {
-		orderRing := &OrderRing{
-			Price: buyOrder.Price,
-			Side:  Buy,
-		}
-
-		item := engine.buyPrices.Get(orderRing)
-		if item != nil {
-			orderRing = item.(*OrderRing)
-		} else {
-			item, err := engine.orderQueuePool.BorrowObject(context.Background())
-			if err != nil {
-				panic(err)
-			}
-
-			orderRing.Orders = item.(*OrderQueue)
-
-			engine.buyPrices.ReplaceOrInsert(orderRing)
-		}
-
-		if !orderRing.Orders.Put(buyOrder) {
+		item := engine.buyPrices.GetItem(buyOrder.Price)
+		if !item.Orders.Put(buyOrder) {
 			panic("buy order queue is full")
 		}
 	}
@@ -168,9 +132,8 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 	// pre-allocate execution list of size 10
 	executions := make([]*Execution, 0, 10)
 
-	engine.buyPrices.Descend(func(i btree.Item) bool {
-		orderRing := i.(*OrderRing)
-		currBuyPrice, orderList := orderRing.Price, orderRing.Orders
+	engine.buyPrices.Descend(func(item *PriceItem) bool {
+		currBuyPrice, orderList := item.Price, item.Orders
 
 		if sellOrder.Price > currBuyPrice {
 			return false
@@ -202,8 +165,6 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 
 				if buyOrder.Quantity > 0 {
 					if !orderList.Put(buyOrder) {
-						// TODO: don't expect this error could happen,
-						//		 should we panic?
 						break
 					}
 				}
@@ -221,16 +182,10 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 		}
 
 		if orderList.Len() == 0 {
-			if err := engine.orderQueuePool.ReturnObject(context.Background(), orderList); err != nil {
-				panic(err)
-			}
-
-			if deleted := engine.buyPrices.Delete(i); deleted == nil {
-				panic("item doesn't exist")
-			}
+			engine.buyPrices.Delete(currBuyPrice)
 		}
 
-		if sellOrder.Quantity == 0 || engine.buyPrices.Len() == 0 {
+		if sellOrder.Quantity == 0 {
 			return false
 		}
 
@@ -238,26 +193,8 @@ func (engine *MatchEngine) processSellOrder(sellOrder *Order) ([]*Execution, err
 	})
 
 	if sellOrder.Quantity > 0 {
-		orderRing := &OrderRing{
-			Price: sellOrder.Price,
-			Side:  Sell,
-		}
-
-		item := engine.sellPrices.Get(orderRing)
-		if item != nil {
-			orderRing = item.(*OrderRing)
-		} else {
-			item, err := engine.orderQueuePool.BorrowObject(context.Background())
-			if err != nil {
-				panic(err)
-			}
-
-			orderRing.Orders = item.(*OrderQueue)
-
-			engine.sellPrices.ReplaceOrInsert(orderRing)
-		}
-
-		if !orderRing.Orders.Put(sellOrder) {
+		item := engine.sellPrices.GetItem(sellOrder.Price)
+		if !item.Orders.Put(sellOrder) {
 			panic("sell order queue is full")
 		}
 	}

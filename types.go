@@ -56,14 +56,3 @@ func (o Order) String() string {
 		o.Price,
 		o.Timestamp)
 }
-
-// OrderRing represents the order ring
-type OrderRing struct {
-	Price  int
-	Side   Side
-	Orders *OrderQueue
-}
-
-func (or OrderRing) String() string {
-	return fmt.Sprintf("Price: %d, Num of order: %d, Side: %v", or.Price, or.Orders.Len(), or.Side)
-}

@@ -176,7 +176,7 @@ func TestCancelOrder(t *testing.T) {
 }
 
 func benchmarkProcessOrderRandomInsert(n int, b *testing.B) {
-	engine := NewMatchEngine(n, 8192)
+	engine := NewMatchEngine(n, 32768)
 
 	prices := make([]int, n)
 	for i := range prices {
